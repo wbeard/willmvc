@@ -1,5 +1,16 @@
 (function(global) {
 
+  function Promise(fn) {
+    var callback = null;
+    this.then = function(cb) {
+      callback = cb;
+    }
+    function resolve(value) {
+      callback(value);
+    }
+    fn(resolve);
+  }
+
   var isBrowser = global.document ? true : {},
       isArray = function(arr) {
         return Object.prototype.toString.call(arr) === '[object Array]';
@@ -23,12 +34,15 @@
       makeNode = function(path) {
         var node = document.createElement("script");
         node.type = 'text/javascript';
-        node.async = true;
         node.src = path + ".js";
         return node;
       },
       attachNode = function(node) {
-        global.document.head.appendChild(node);
+        try {
+          global.document.head.appendChild(node);
+        } catch(ex) {
+          global.document.head.remove(node);
+        }
       },
       modules = (function() {
         var counter = 0,
@@ -39,8 +53,10 @@
         return {
           add: function(name, deps, fn) {
             loaded[name] = {};
+            loaded[name].status = 0;
             loaded[name].id = counter;
             loaded[name].path  = name + ".js";
+            loaded[name].deps = deps;
             loaded[name].fn = fn;
             counter++;
           },
@@ -48,7 +64,11 @@
             return loaded[name] || null;
           }
         };
-      }());
+      }()),
+      load = function(moduleName) {
+        var node = makeNode(moduleName);
+        attachNode(node);
+      };
 
   global.define = function(name, deps, fn) {
     var moduleCallbackArray = [];
@@ -58,39 +78,53 @@
       deps = null;
     }
 
+    each(deps, function(dep) {
+      load(dep)
+    });
+
     modules.add(name, deps, fn);
 
+    modules.get(name).status = "loaded";
   };
 
-  global.require = function(deps, fn) {
-    var scriptFragment;
+  global.require = function(deps) {
+
+    var callback = null, callBackArray = [];
 
     if(isFunction(deps)) {
       fn = deps;
       deps = null;
     }
-
+  
     if(typeof deps === "string") {
-      scriptFragment = makeNode(deps);
-      attachNode(scriptFragment);
+      var tempArray = [];
+      tempArray.push(deps);
+      deps = tempArray;
     }
 
-    /*else {
-      scriptFragment = global.createDocumentFragment();
-      deps.forEach(function(module) {
-        if(modules.add(module)) {
-          var script = makeNode(modules.get(deps).path);
-          scriptFragment.appendChild(script);
-        }
-      });
-    }*/
+    deps.forEach(function(module) {
+      if(!modules.get(module)) {
+        load(module);
+      }
+    });
 
-
-
-    if(fn) {
-      fn();
+    function resolve(value) {
+      callback(value);
     }
+
+    return {
+      then: function(cb) {
+        deps.forEach(function(module) {
+          callBackArray.push(modules.get(module).fn);
+        });
+        cb(callBackArray);
+      }
+    };
 
   };
+
+  global.getModule = function(module) {
+    return modules.get(module);
+  }
 
 }(window));

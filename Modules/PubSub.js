@@ -1,4 +1,4 @@
-define(function() {
+define("modules/PubSub", function() {
   return {
     subscribe: function(scope, channel, callback) {
       (this.listeners[channel] || (this.listeners[channel] = [])).push({
